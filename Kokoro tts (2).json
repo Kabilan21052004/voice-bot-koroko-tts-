@@ -1,0 +1,545 @@
+{
+  "name": "Kokoro tts",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "voice-chat",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "id": "09b0ac93-1338-4a0f-bea1-d1f7eb6ccd18",
+      "name": "Webhook Voice Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1800,
+        20
+      ],
+      "webhookId": "voice-chat-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "audio-present-condition",
+              "leftValue": "={{ Object.keys($input.all()[0].binary || {}).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "076f140c-b96b-488a-886f-976cf7e2677d",
+      "name": "Check Audio Present",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1600,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://whisper-api:5005/transcribe",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-type",
+              "value": "multipart/form-data"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "audio",
+              "inputDataFieldName": "audio"
+            },
+            {
+              "name": "model",
+              "value": "large"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "e5795412-1c03-4f06-80c6-7b58ed648870",
+      "name": "Whisper Transcription",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1400,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process and enhance the transcribed text\nconst transcription = $input.first().json.text || '';\n\n// Clean up the transcription\nconst cleanText = transcription.trim();\n\n// Get user information from webhook headers or body\nconst userEmail = $('Webhook Voice Trigger').first().json.headers['x-user-email'] || \n                  $('Webhook Voice Trigger').first().json.body.userEmail|| \n                 null;\n\nconst userName = $('Webhook Voice Trigger').first().json.headers['x-user-name'] || \n                 $('Webhook Voice Trigger').first().json.body.userName|| \n                'Unknown User';\n\nconst userId = $('Webhook Voice Trigger').first().json.headers['x-user-id'] || \n              $input.first().json.userId || \n              null;\n\n// Use email as session ID (most reliable and user-friendly)\nconst sessionId = userEmail || userId || 'anonymous-user';\n\n// Log user information for debugging\nconsole.log('User Info:', {\n  email: userEmail,\n  name: userName,\n  sessionId: sessionId\n});\n\nreturn {\n  json: {\n    original_transcription: cleanText,\n    chatInput: $input.first().json.text,\n    sessionId: sessionId,\n    userEmail: userEmail,\n    userName: userName,\n    userId: userId,\n    timestamp: new Date().toISOString(),\n    word_count: cleanText.split(' ').length\n  }\n};"
+      },
+      "id": "1f7d5af0-d6e8-408e-afce-8194d17666ac",
+      "name": "Process & Generate Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1200,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://kokoro-tts:8880/v1/audio/speech",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"kokoro\",\n  \"input\": \"{{ $json.cleaned_text }}\",\n  \"voice\": \"af_heart\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "speech_audio"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "47d1016e-0e5e-4c86-ba8d-22e3bbdb7d08",
+      "name": "Kokoro Text-to-Speech",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -140,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": false,\n  \"error\": \"No audio data received\",\n  \"message\": \"Please make sure to send an audio file with your request\",\n  \"timestamp\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "405ac1c9-e3fb-405c-8ac3-e5bfcd7ec9a3",
+      "name": "No Audio Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1500,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "for (const item of $input.all()) {\n  let text =$input.first().json.output;\n\n  // Keep only letters, numbers, and spaces\n  text = text.replace(/[^a-zA-Z0-9\\s]/g, '').trim();\n\n  // Normalize multiple spaces to one\n  text = text.replace(/\\s+/g, ' ');\n\n  // Optional: split into words\n  const words = text.split(' ');\n\n  item.json.cleaned_text = text;\n  item.json.words = words;\n}\n\nreturn $input.all();\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -360,
+        -120
+      ],
+      "id": "194c689c-7ffd-4ad7-831c-47261de459bb",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "=You are a helpful voice assistant with persistent memory. You remember users across conversations.\n\nUser: {{ $json.userName }} ({{ $json.userEmail }})\nInput: {{ $json.chatInput }}\nSession: {{ $json.sessionId }}\n\nIMPORTANT BEHAVIOR:\n- Address the user by their name when appropriate\n- Remember all previous conversations with this user\n- Reference past interactions naturally in conversation\n- Store and recall user preferences, interests, and personal information\n- Be personable and build rapport over time\n- If this is a new user, welcome them warmly\n\nIMPORTANT OUTPUT REQUIREMENTS:\n- Use only words and numbers in your response\n- Do not use any special characters, symbols, or punctuation marks except spaces\n- For mathematical formulas write them in words only\n- For exponents say \"square\" instead of using superscript or the number 2\n- For example write \"A square plus B square equals C square\" not \"A² + B² = C²\"\n- Avoid symbols like +, -, =, *, /, %, &, @, #, etc\n- Write everything in plain spoken language that text-to-speech can easily read\n- Keep responses conversational and natural\n- Use the user's name occasionally but not excessively\n\nGenerate a personalized, clean text-to-speech friendly response."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2,
+      "position": [
+        -1060,
+        -200
+      ],
+      "id": "eabd6f99-830f-4088-b548-c52b50861f76",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-pro",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -1040,
+        60
+      ],
+      "id": "c2861da8-d919-484a-af48-1da7691be6a8",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "KMmWICKo7IgLDVo3",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "binary",
+        "responseDataSource": "set",
+        "inputFieldName": "speech_audio",
+        "options": {}
+      },
+      "id": "1cba73d5-dbc0-479a-a737-a87748934876",
+      "name": "audio response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        80,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -460,
+        100
+      ],
+      "id": "d323cf7b-c2a1-4039-9bbd-f54fe481bb74",
+      "name": "Final text response"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.sessionId }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        -880,
+        60
+      ],
+      "id": "7c6bd0f9-704a-402f-a2b4-f90f51a452fb",
+      "name": "Postgres Chat Memory",
+      "credentials": {
+        "postgres": {
+          "id": "G92NPeOf44AWlZxb",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare conversation data for vector storage\nconst items = $input.all();\nconst processedItems = [];\n\n// Function to clean text - keep only letters, numbers, and spaces\nfunction cleanText(text) {\n  return text\n    .replace(/[^a-zA-Z0-9\\s]/g, ' ')  // Keep only letters, numbers, and spaces\n    .replace(/\\s+/g, ' ')             // Replace multiple spaces with single space\n    .trim();                          // Remove leading/trailing whitespace\n}\n\nfor (const item of items) {\n  const userInput = $('Process & Generate Response').first().json.chatInput;\n  const aiResponse = item.json.output;\n  const sessionId = $('Process & Generate Response').first().json.sessionId;\n  const userEmail = $('Process & Generate Response').first().json.userEmail;\n  const userName = $('Process & Generate Response').first().json.userName;\n  const timestamp = new Date().toISOString();\n  \n  // Clean the inputs before creating conversation context\n  const cleanUserInput = cleanText(userInput);\n  const cleanAiResponse = cleanText(aiResponse);\n  \n  // Create conversation turn data\n  const conversationData = {\n    session_id: sessionId,\n    user_email: userEmail,\n    user_name: userName,\n    user_input: userInput,\n    ai_response: aiResponse,\n    timestamp: timestamp,\n    conversation_context: `User ${cleanUserInput} Assistant ${cleanAiResponse}`,\n    metadata: {\n      word_count_input: userInput.split(' ').length,\n      word_count_response: aiResponse.split(' ').length,\n      conversation_turn: 1 // You might want to track this better\n    }\n  };\n  \n  processedItems.push({\n    json: conversationData\n  });\n}\nreturn processedItems;"
+      },
+      "id": "02989c8d-ee3e-4246-af2e-38d05a5e6e21",
+      "name": "Prepare Conversation Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -620,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-goog-api-key",
+              "value": "AIzaSyCoJa7y2hDSQM4Tfdj-fnWQckzovozMQ5I"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"models/text-embedding-004\",\n  \"content\": {\n    \"parts\": [\n      {\n        \"text\": \"{{ $json.conversation_context }}\"\n      }\n    ]\n  }\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "1d1ed3ce-14df-493b-abae-9c76166d9009",
+      "name": "Generate Embeddings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -340,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine conversation data with embeddings\nconst conversationData = $('Prepare Conversation Data').first().json;\nconst embeddingResponse = $input.first().json;\n\nconst embedding = embeddingResponse.embedding.values;\n\nreturn {\n  json: {\n    ...conversationData,\n    embedding: embedding,\n    embedding_model: 'text-embedding-004',\n    embedding_dimensions: embedding.length\n  }\n};"
+      },
+      "id": "c255fe68-b0df-4247-9684-b3b50d4bf40f",
+      "name": "Combine Data with Embeddings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -140,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO conversation_vectors (\n  session_id,\n  user_email,\n  user_name,\n  user_input,\n  ai_response,\n  conversation_context,\n  embedding,\n  embedding_model,\n  embedding_dimensions,\n  metadata,\n  created_at\n) VALUES (\n  '{{ $json.session_id }}',\n  '{{ $json.user_email }}',\n  '{{ $json.user_name }}',\n  '{{ $json.user_input }}',\n  '{{ $json.ai_response }}',\n  '{{ $json.conversation_context }}',\n  '{{ JSON.stringify($json.embedding) }}',\n  '{{ $json.embedding_model }}',\n  {{ $json.embedding_dimensions }},\n  '{{ JSON.stringify($json.metadata) }}',\n  '{{ $json.timestamp }}'\n);",
+        "options": {}
+      },
+      "id": "6da21827-5fe3-4a00-beb7-3aeec79d710b",
+      "name": "Store Vector Embeddings",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        60,
+        -300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "G92NPeOf44AWlZxb",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log successful vector storage\nconst result = $input.first().json;\nconsole.log('Vector embedding stored successfully:', {\n  session_id: $('Prepare Conversation Data').first().json.session_id,\n  timestamp: new Date().toISOString(),\n  embedding_dimensions: $('Combine Data with Embeddings').first().json.embedding_dimensions\n});\n\n// Pass through the original data for the workflow to continue\nreturn $('AI Agent').all();"
+      },
+      "id": "2c9deae8-d805-4b99-a5ce-953a7e7d1299",
+      "name": "Log Vector Storage Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        -300
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Voice Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check Audio Present",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Audio Present": {
+      "main": [
+        [
+          {
+            "node": "Whisper Transcription",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Audio Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Whisper Transcription": {
+      "main": [
+        [
+          {
+            "node": "Process & Generate Response",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Final text response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process & Generate Response": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kokoro Text-to-Speech": {
+      "main": [
+        [
+          {
+            "node": "audio response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Kokoro Text-to-Speech",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Final text response",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare Conversation Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Conversation Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Embeddings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Embeddings": {
+      "main": [
+        [
+          {
+            "node": "Combine Data with Embeddings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Data with Embeddings": {
+      "main": [
+        [
+          {
+            "node": "Store Vector Embeddings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Vector Embeddings": {
+      "main": [
+        [
+          {
+            "node": "Log Vector Storage Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "55447a1d-ccb9-43bd-bd04-9290b2943105",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "90da67aba64137bebbcaf8630f8f7bca8f8e811ea7021492ecbc2d0174338ff2"
+  },
+  "id": "DsbtvoCgPfnlTYYE",
+  "tags": []
+}
