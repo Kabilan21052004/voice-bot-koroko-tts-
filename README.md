@@ -39,16 +39,7 @@ docker network create kokoro-network
 ### 2. Install n8n
 
 ```bash
-docker run -d \
-  --name n8n \
-  --network kokoro-network \
-  -p 5678:5678 \
-  -e N8N_BASIC_AUTH_ACTIVE=true \
-  -e N8N_BASIC_AUTH_USER=admin \
-  -e N8N_BASIC_AUTH_PASSWORD=your_secure_password \
-  -e WEBHOOK_URL=http://localhost:5678 \
-  -v n8n_data:/home/node/.n8n \
-  n8nio/n8n:latest
+docker run -d --name n8n --network kokoro-network -p 5678:5678 -e N8N_BASIC_AUTH_ACTIVE=true -e N8N_BASIC_AUTH_USER=admin -e N8N_BASIC_AUTH_PASSWORD=your_secure_password -e WEBHOOK_URL=http://localhost:5678 -v n8n_data:/home/node/.n8n n8nio/n8n:latest
 ```
 
 Access n8n at: `http://localhost:5678`
@@ -56,21 +47,14 @@ Access n8n at: `http://localhost:5678`
 ### 3. Install Whisper API
 
 ```bash
-docker run -d \
-  --name whisper-api \
-  --network kokoro-network \
-  -p 5005:5005 \
-  onerahmet/openai-whisper-asr-webservice:latest
+docker run -d --name whisper-api --network kokoro-network -p 9000:9000 onerahmet/openai-whisper-asr-webservice:latest
 ```
 
 ### 4. Install Kokoro TTS
 
 ```bash
-docker run -d \
-  --name kokoro-tts \
-  --network kokoro-network \
-  -p 8880:8880 \
-  remsky/kokoro-fastapi-cpu:latest
+docker pull ghcr.io/remsky/kokoro-fastapi-cpu:latest
+docker run -d --name kokoro-tts --network kokoro-network -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:latest
 ```
 
 ### 5. Verify All Containers
@@ -92,6 +76,7 @@ You should see all three containers: `n8n`, `whisper-api`, and `kokoro-tts`.
 Execute the following SQL in your Supabase SQL editor:
 
 ```sql
+CREATE EXTENSION IF NOT EXISTS vector;
 -- Create conversation_vectors table for storing embeddings
 CREATE TABLE conversation_vectors (
     id SERIAL PRIMARY KEY,
@@ -138,7 +123,7 @@ CREATE TABLE conversation_vectors (
 ### 3. Update Service URLs
 
 In the workflow nodes, update the service URLs to use container names:
-- Whisper API: `http://whisper-api:5005/transcribe`
+- Whisper API: `http://whisper-api:9000/asr`
 - Kokoro TTS: `http://kokoro-tts:8880/v1/audio/speech`
 
 ### 4. Activate Workflow
@@ -296,5 +281,4 @@ For issues and questions:
 2. Review container logs
 3. Verify database connectivity
 4. Test individual components
-
 
